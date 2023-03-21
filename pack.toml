@@ -1,0 +1,10 @@
+[custom.all.date]
+type = "local"
+path = "."
+ipkg = "date.ipkg"
+test = "test/test.ipkg"
+
+[custom.all.date-test]
+type = "local"
+path = "test"
+ipkg = "test.ipkg"
