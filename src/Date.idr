@@ -139,34 +139,33 @@ daysBeforeYear year =
 ||| Number of days in year preceding first day of month.
 daysBeforeMonth : Nat -> Month -> Nat
 daysBeforeMonth year Jan   = 0
-daysBeforeMonth year month = 
-  let
-    prev = prevMonth month
-    dim  = daysInMonth year prev
-    -- assuming definition of prevMonth is correct, it will terminate:
-    -- we eventually reach non-recursive Jan case. I am unsure how to
-    -- prove this.
-    dbm  = daysBeforeMonth year (assert_smaller year prev)
-  in
-    dim + dbm
+daysBeforeMonth year month = case prevMonth month of
+      Jan => 0
+      prevMonth => 
+        let
+          dim = daysInMonth year month
+          dbm = daysBeforeMonth year (assert_smaller month prevMonth)
+        in
+          dim + dbm
 
 ||| Number of days inthe given year
 daysInYear : (y : Nat) -> Nat
 daysInYear y = if isLeap y then 366 else 365
 
-||| A Julian date that cannot hold invalid dates
+
+||| A validated YMD triple
 |||
-||| e.g. 2023-Jan-0, 2023-Feb-29, 2012-Aug-35 
+||| e.g. 2023-Jan-0, 2023-Feb-29, 2012-Aug-35 are not allowed
 export
-data Julian : Type where
-  YMD
+data Date : Type where
+  Valid
     :  (year   : Nat)
     -> (month  : Month)
     -> (day    : Nat)
-    -> {auto _ : NonZero year}
-    -> {auto _ : NonZero day}
-    -> {auto _ : LTE day (daysInMonth year month) }
-    -> Julian
+    -> {0    _ : NonZero year}
+    -> {0    _ : NonZero day}
+    -> {0    _ : LTE day (daysInMonth year month)}
+    -> Date
 
 ||| Number of days in 400 years
 DI400Y : Nat
@@ -180,36 +179,46 @@ DI100Y = daysBeforeYear 101
 DI4Y : Nat
 DI4Y = daysBeforeYear 5
 
--- XXX: convert these into proofs
--- assert DIY4    == 365 + 1
--- assert DIY400Y == 4 * DI100Y + 1
--- assert DI100Y  == 25 * DI4Y - 1
+{- works but is slow
+DI4Y_is_correct : DI4Y = (4 * 365 + 1)
+DI4Y_is_correct = Refl
+DI100Y_is_correct : DI100Y  = 25 * DI4Y - 1
+DI100Y_is_correct = Refl
+DIY_400Y_is_correct : DI400Y = (4 * DI100Y + 1)
+DIY_400Y_is_correct = Refl
+-}
 
 ||| Recursively find month and day for given year and day of year
-||| 
-||| Note: The day here is zero-indexed!
 findMonthAndDay 
-  :  (year     : Nat) 
-  -> (residual : Nat)
-  -> {auto _   : LTE residual (daysInYear year)}
-  -> (Month, Nat)
-findMonthAndDay year month = 
+  :  (year       : Nat) 
+  -> (residual   : Nat)
+  -> {0 nzY      : NonZero year}
+  -> {0 nzR      : NonZero residual}
+  -> {0 resLtDiy : LTE residual (daysInYear year)}
+  -> Date
+findMonthAndDay year residual = 
   let diy = daysInYear year
-  in  fmdRec year residual Jan 
+  in  fmdRec year residual Jan {nzY} {nzR}
 where 
   fmdRec 
-    :  (year     : Nat) 
-    -> (residual : Nat) 
-    -> (month    : Month) 
-    -> {auto _   : LTE residual (daysInYear year)}
-    -> (Month, Nat)
-  fmdRec year residual month =
-    let  dim = daysInMonth year month
-    in if   residual < dim
-       then (month, residual)
-       else fmdRec year (residual `minus` dim) (nextMonth month)
+    :  (year       : Nat) 
+    -> (residual   : Nat) 
+    -> (month      : Month) 
+    -> {0 nzY      : NonZero year}
+    -> {0 nzR      : NonZero residual}
+    -> {0 resLtDiy : LTE residual (daysInYear year)}
+    -> Date
+  fmdRec year residual month = 
+    let
+      dim = (daysInMonth year month)
+      nm  = (nextMonth month)
+    in case isLTE residual dim of
+       Yes pro    => Valid year month residual
+       No  contra => fmdRec 
+         year 
+         (assert_smaller residual (residual `minus` dim))
+         (nextMonth month)
   
-
 {-
 ||| Gregorian ordinal to (y, m, d) typle, Considering 1-Jan-1 as day 1
 ord2ymd 
