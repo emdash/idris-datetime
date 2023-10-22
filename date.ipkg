@@ -13,7 +13,10 @@ brief = "Port of python datetime library"
 -- langversion
 
 -- packages to add to search path
--- depends =
+depends = contrib
+	, elab-util
+	, json
+
 
 -- modules to install
 modules = Date
