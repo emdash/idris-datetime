@@ -1,5 +1,6 @@
 {-
- - A Meal Planner in Idris
+ - idris-datetime
+ -
  - Copyright (C) 2022 Brandon Lewis
  -
  - This program is free software: you can redistribute it and/or modify
@@ -17,17 +18,18 @@
 -}
 
 
-||| This is a cut-down version of a date-time library I started earlier.
+||| This is modeled after Python's datetime module, except key
+||| operations are total.
+|||
+||| I'm using intrinsic typing via Nat and Fin to prove date
+||| bounds. This is as slow as I was warned it would be. But I'll post
+||| this version of the library, in case anyone wants to explore it.
 |||
 ||| The approach is taken from a discord conversation I had a few
 ||| months back.
 |||
-||| I'm doing more run-time checking here than I would like to do in
-||| my stand-alone date-time library, in the interest of moving things
-||| along.
-
-
-||| Special thanks to Stephen Hoek and Kiana
+||| Special thanks to Stephen Hoek and Kiana for all their help on
+||| Discord.
 
 
 module Date
@@ -47,7 +49,10 @@ import System.Clock
 %language ElabReflection
 
 
-||| A Year is just a natural number.
+||| A Year is just a Nat, so there's no special type alias.
+|||
+||| We use natural numbers here, rather than integers, because there
+||| are more theorems available for working with Nat and Fin.
 namespace Year
 
   ||| Returns true if the given year is a leap year.
@@ -81,15 +86,20 @@ namespace Year
       yOver4    := divNatNZ y 4   SIsNonZero
       yOver100  := divNatNZ y 100 SIsNonZero
       yOver400  := divNatNZ y 400 SIsNonZero
-    in (y * 365 + yOver4) `minus` yOver100 + yOver400
+    in (y * 365) + yOver4 + yOver400 `minus` yOver100
 
   {- Some useful constants -}
   public export DaysIn400Years : Nat ; DaysIn400Years = daysBefore 401
   public export DaysIn100Years : Nat ; DaysIn100Years = daysBefore 101
   public export DaysIn4Years   : Nat ; DaysIn4Years   = daysBefore 5
 
+  public export
+  daysNZ : (leap : Bool) -> NonZero (Year.Days leap)
+  daysNZ False = SIsNonZero
+  daysNZ True = SIsNonZero
 
-||| A month is an 8-bit unsigned integer between 1 and 12, inclusive.
+
+||| Symbolic month names
 public export
 data Month
   = Jan
@@ -156,32 +166,6 @@ namespace Month
   ||| The number of days of the given month and leap status.
   %inline public export
   Days : Bool -> Month -> Nat
-  Days True  Jan = 31
-  Days True  Feb = 29
-  Days True  Mar = 31
-  Days True  Apr = 30
-  Days True  May = 31
-  Days True  Jun = 30
-  Days True  Jul = 31
-  Days True  Aug = 31
-  Days True  Sep = 30
-  Days True  Oct = 31
-  Days True  Nov = 30
-  Days True  Dec = 31
-  Days False Jan = 31
-  Days False Feb = 28
-  Days False Mar = 31
-  Days False Apr = 30
-  Days False May = 31
-  Days False Jun = 30
-  Days False Jul = 31
-  Days False Aug = 31
-  Days False Sep = 30
-  Days False Oct = 31
-  Days False Nov = 30
-  Days False Dec = 31
-
-  {-
   Days True  Feb = 29
   Days False Feb = 28
   Days _     Apr = 30
@@ -189,7 +173,6 @@ namespace Month
   Days _     Sep = 30
   Days _     Nov = 30
   Days _     _   = 31
-  -}
 
   ||| A valid day of a given month and leap status
   public export
@@ -209,22 +192,21 @@ namespace Month
   daysBefore True  m = modFin (daysBeforeRec True m) (Year.Days True)
   daysBefore False m = modFin (daysBeforeRec False m) (Year.Days False)
 
-  ||| Doing the opposite thing to both sides of a sum doesn't change
-  ||| the total
-  lemma1
+  ||| Prove that our invariant holds when we make the inductive call.
+  0 lemma1
     :  {n, r, x, b : Nat}
     -> (0 prf : n + r = b)
     -> ((n `minus` x) + (r + x) = b)
   lemma1 prf = ?lemma_rhs
 
-  ||| This is also true if we just use S
-  lemma2
+  ||| Convert finInvSpec to the form we need to show.
+  0 lemma2
     :  {n, r, b : Nat}
     -> (0 prf : (S n) + r = b)
     -> (n + (S r) = b)
 
   ||| Recursively search for the given month, leaving the
-  ||| remainder as the 0-indexed day of the month
+  ||| remainder as the 0-indexed day of the month.
   public export
   findMonthAndDay
     : (leap : Bool)
@@ -257,6 +239,24 @@ namespace Month
     (lemma2 (invFinSpec doy))
     Jan
 
+  ||| Convenience for making a specific month and day
+  public export
+  day
+    : (leap : Bool)
+    -> (m : Month)
+    -> (d : Nat)
+    -> {auto 0 dnZ : NonZero d}
+    -> {auto 0 dlt : LTE d (Days leap m)}
+    -> DPair Month (Month.Day leap)
+  day True  m (S d) = (m ** natToFinLT d)
+  day False m (S d) = (m ** natToFinLT d)
+
+  ||| Convenience for making a specific month and day
+  public export
+  dec31st : (leap : Bool) -> DPair Month (Month.Day leap)
+  dec31st True  = day True  Dec 31
+  dec31st False = day False Dec 31
+
 
 ||| A valid Gregorian Date, which correctly handles leap years.
 |||
@@ -281,7 +281,6 @@ namespace Date
   |||
   ||| Note that, internally, days are represented as 0-based finite
   ||| integers.
-  public export
   pack : Nat -> Nat -> Nat -> Maybe Date
   pack _ Z _ = Nothing
   pack _ _ Z = Nothing
@@ -291,7 +290,6 @@ namespace Date
     Just $ MkDate y (cast m) (cast d)
 
   ||| Unpack the date into its unrefined components.
-  public export
   unpack : Date -> (Nat, Nat, Nat)
   unpack (MkDate y m d) = (y, S (cast m), S (cast d))
 
@@ -318,13 +316,11 @@ namespace Date
       dim  := Month.Days leap m
       dby  := daysBefore y
       dbm  := daysBefore leap m
-    in dby + cast dbm + cast d
-
-{-
-  dec31st : Nat -> Date
+    in dby + cast dbm + S (cast d)
 
   ||| Construct a date from a non-zero ordinal number
-  fromOrdinal : (o : Nat) -> {auto onz : NonZero o} -> Date
+  public export
+  fromOrdinal : (o : Nat) -> {auto 0 onz : NonZero o} -> Date
   fromOrdinal (S n) =
     let
       (n400, n) := divmodNatNZ n DaysIn400Years SIsNonZero
@@ -336,39 +332,63 @@ namespace Date
       if (n1 == 4) || (n100) == 4
       then
         let
-          year := pred year
-          leap := IsLeapYear year
-        in dec31st year
-      else case IsLeapYear year of
-        True  => let (m ** d) := findDayOf True (modFin n (Year.Days True))
-                 in MkDate year m d
-        False => let (m ** d) := findDayOf False (modFin n (Year.Days False))
-                 in MkDate year m d
+          year     := pred year
+          (m ** d) := dec31st (IsLeapYear year)
+        in MkDate year m d
+      else
+        let
+          (m ** d) := findDayOf
+            (IsLeapYear year)
+            (modFin n (Year.Days (IsLeapYear year))
+            @{daysNZ _})
+        in MkDate year m d
 
+  ||| Create a date from static data.
+  |||
+  ||| This correctly handles 0-indexed day field.
+  public export
+  date
+    :  (y : Nat)
+    -> (m : Month)
+    -> (d : Nat)
+    -> {auto 0 dnz : NonZero d}
+    -> {auto 0 dlt : LTE d (Month.Days (IsLeapYear y) m)}
+    -> Date
+  date y m d =
+    let (m ** d) := day (IsLeapYear y) m d
+    in MkDate y m d
 
-{-
+  ||| Date representing the true beginning of the unverse.
+  epochStart : Nat
+  -- XXX: works, but takes too long to typechceck
+  -- epochStart = toOrdinal $ date 1970 Jan 1
+  epochStart = 719163
+
+  ||| Construct a date from a unix timestamp (in seconds)
+  public export
+  fromUnixTime : Nat -> Date
+  fromUnixTime s =
+    fromOrdinal (epochStart + (divNatNZ s 86400 SIsNonZero))
+
+  public export Eq Date       where x == y      = (unpack x) == (unpack y)
+  public export Ord Date      where compare x y = compare (unpack x) (unpack y)
+  public export ToJSON   Date where toJSON d    = string $ show d
+  public export FromJSON Date where fromJSON    = withString "Date" parseDate
+
 
 ||| Get the current system time as a Date
-||| XXX: just returns dummy value for now
 export
 today : IO Date
 today = do
   ct <- clockTime UTC
-  let s = seconds ct
-  putStrLn $ show s
-  pure $ MkDate 2023 8 25
+  pure $ fromUnixTime $ cast $ seconds ct
 
 
 {- Implement common interfaces -}
 
-
-export
-Show Date where
-  show d =
-    let (y, m, d) = unpack d
-    in "\{show y}-\{show m}-\{show d}"
-
-export Eq Date       where x == y      = (unpack x) == (unpack y)
-export Ord Date      where compare x y = compare (unpack x) (unpack y)
-export ToJSON   Date where toJSON d    = string $ show d
-export FromJSON Date where fromJSON    = withString "Date" parseDate
+partial
+main : IO ()
+main = do
+  d <- today
+  putStrLn $ show d
+  main
