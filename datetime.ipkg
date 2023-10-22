@@ -22,10 +22,10 @@ depends = contrib
 modules = Date
 
 -- main file (i.e. file to load at REPL)
--- main =
+main = Date
 
 -- name of executable
--- executable =
+executable = date
 -- opts =
 sourcedir = "src"
 -- builddir =
