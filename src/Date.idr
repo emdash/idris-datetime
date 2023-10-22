@@ -197,7 +197,20 @@ namespace Month
 
   ||| Prove that our invariant holds when we make the inductive call.
   |||
-  ||| This seems fairly obvious, but I'm not sure how to prove it
+  ||| This seems fairly obvious, but I'm not sure how to prove it.
+  |||
+  ||| `n` some natural number `< b`
+  ||| `b` is the upper bound of `n`
+  ||| `x` is some arbitrary value `<= n`
+  ||| `ltenx` is evidence that `x` <= `n`
+  ||| `prf` is evidence that `r` is the complement of `n` modulo `b`
+  |||
+  ||| In simple terms, We need to prove that moving a value from the
+  ||| left column to the right column doesn't change the total.
+  |||
+  ||| The extra bound on `x` is because `minus` on Nat "bottoms out"
+  ||| at zero, rather than wrapping around or going negative. So I
+  ||| think this is needed.
   0 lemma1
     :  {0 n, r, x, b : Nat}
     -> (0 ltenx : LTE x n)
@@ -205,19 +218,18 @@ namespace Month
     -> ((n `minus` x) + (r + x) = b)
   lemma1 prf = ?lemma_rhs
 
-  ||| Converts finInvSpec to the form we need.
-  |||
-  ||| This seems even easier to prove than above, but still not sure
-  ||| how.
-  0 lemma2
-    :  {0 n, r, b : Nat}
-    -> (0 prf : (S n) + r     = b)
-    -> (        n     + (S r) = b)
-  lemma2 prf = ?lemma2_rhs
-
   ||| Recursively search for the given month, leaving the
   ||| remainder as the 0-indexed day of the month.
-  public export
+  |||
+  ||| `n` is the day of the year
+  ||| `r` is its complement, modulo `Year.Days leap`
+  |||
+  ||| `prf` is a proof that establishes that `n + r = Year.Days leap`,
+  ||| i.e. the "loop invariant" we must maintain.
+  |||
+  ||| `m` is used to keep track of the month as we recurse. We search
+  ||| in increasing order, so kick off the recusrion by passing `Jan`,
+  ||| or all hell will break loose.
   findMonthAndDay
     :  (leap : Bool)
     -> (n, r : Nat)
@@ -226,16 +238,35 @@ namespace Month
     -> DPair Month (Day leap)
   findMonthAndDay leap n r prf m =
     case isLT n (Days leap m) of
-      Yes dltdm  => (m ** natToFinLTE n dltdm)
-      No  contra =>
+      Yes was_less  => (m ** natToFinLTE n was_less)
+      No  not_less =>
         findMonthAndDay
           leap
           (assert_smaller n (n `minus` (Days leap m)))
           (r + (Days leap m))
-          (lemma1 (fromLteSucc $ notLTEImpliesGT contra) prf)
+          (lemma1 (fromLteSucc $ notLTEImpliesGT not_less) prf)
           (nextMonth m)
 
+  ||| Converts a library theorem to the form we need in `findDayOf`.
+  |||
+  ||| invFinSpec is almost the theorem we need, but gives:
+  |||   (S n) + r = b
+  |||
+  ||| we need:
+  |||    n + (S r) = b`
+  |||
+  ||| We want the `S` on the complement side, not on the day value.
+  0 lemma2
+    :  {0 n, r, b : Nat}
+    -> (0 prf : (S n) + r     = b)
+    -> (        n     + (S r) = b)
+  lemma2 prf = rewrite sym (plusSuccRightSucc n r) in prf
+
   ||| Find the month and day for the given day of year.
+  |||
+  ||| This returns a dependent pair of (Month ** Day).
+  |||
+  ||| Note: Day is 0-based!
   public export
   findDayOf
     : (leap : Bool)
@@ -243,12 +274,17 @@ namespace Month
     -> DPair Month (Day leap)
   findDayOf leap doy = findMonthAndDay
     leap
+    --- invFinSpec helps decompose a `Fin n` into a value and its
+    --- complement `mod n`, along with a proof of the loop invariant
+    --- for `findMonthAndDay`.
     (finToNat doy)
     (S (finToNat (invFin doy)))
     (lemma2 (invFinSpec doy))
     Jan
 
-  ||| Convenience for making a specific month and day
+  ||| Make a (Month ** Day) pair from a static 1-based day.
+  |||
+  ||| Note: The Day field of the return value is 0-based.
   public export
   day
     : (leap : Bool)
@@ -260,7 +296,7 @@ namespace Month
   day True  m (S d) = (m ** natToFinLT d)
   day False m (S d) = (m ** natToFinLT d)
 
-  ||| Convenience for making a specific month and day
+  ||| Simplify making this specific day of the year.
   public export
   dec31st : (leap : Bool) -> DPair Month (Month.Day leap)
   dec31st True  = day True  Dec 31
@@ -269,7 +305,17 @@ namespace Month
 
 ||| A valid Gregorian Date, which correctly handles leap years.
 |||
-||| Month and days are represented as 0-based finite integers.
+||| Month is symbolic, and days are represented as 0-based finite
+||| integers which depend on the month and leap year status.
+|||
+||| You can't make a date wich stores a `Apr 31`, for example. Or `Feb
+||| 29` when the year isn't a leap year.
+|||
+||| Note that `Month.Day` stores days as 0-based integers. So `Jan
+||| 1st` is represented as `Jan FZ`. The convenience api handles this
+||| for you, so you shouldn't have to worry about it unless you
+||| directly construct or destruct a Date, which I am trying to
+||| prevent here.
 export
 record Date where
   constructor MkDate
@@ -285,6 +331,7 @@ namespace Date
   |||
   ||| Note that, internally, days are represented as 0-based finite
   ||| integers.
+  public export
   pack : Nat -> Nat -> Nat -> Maybe Date
   pack _ Z _ = Nothing
   pack _ _ Z = Nothing
@@ -293,7 +340,8 @@ namespace Date
     d <- natToFin d (Month.Days (IsLeapYear y) (cast m))
     Just $ MkDate y (cast m) (cast d)
 
-  ||| Unpack the date into its unrefined components.
+  ||| Unpack the date into its components.
+  public export
   unpack : Date -> (Nat, Nat, Nat)
   unpack (MkDate y m d) = (y, S (cast m), S (cast d))
 
@@ -343,8 +391,7 @@ namespace Date
         let
           (m ** d) := findDayOf
             (IsLeapYear year)
-            (modFin n (Year.Days (IsLeapYear year))
-            @{daysNZ _})
+            (modFin n (Year.Days (IsLeapYear year)) @{daysNZ _})
         in MkDate year m d
 
   ||| Create a date from static data.
