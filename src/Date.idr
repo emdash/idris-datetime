@@ -36,7 +36,6 @@ module Date
 
 
 import Data.Nat
-import Data.Nat.Order.Properties
 import Data.Fin
 import Data.Fin.Extra
 import Derive.Prelude
@@ -72,7 +71,16 @@ namespace Year
   Days True = 366
   Days False = 365
 
-  ||| A natural number bounded to the number of days in a given year
+  ||| The number of days in a year is nonzero
+  |||
+  ||| This obvious fact isn't transparent to Idris.  It also doesn't
+  ||| work if it's given a 0 quantity, so it's not marked as erased.
+  public export
+  daysNZ : (leap : Bool) -> NonZero (Year.Days leap)
+  daysNZ False = SIsNonZero
+  daysNZ True  = SIsNonZero
+
+  ||| A natural number bounded to the number of days in a given year.
   public export
   0 Day : Bool -> Type
   Day leap = Fin (Days leap)
@@ -92,11 +100,6 @@ namespace Year
   public export DaysIn400Years : Nat ; DaysIn400Years = daysBefore 401
   public export DaysIn100Years : Nat ; DaysIn100Years = daysBefore 101
   public export DaysIn4Years   : Nat ; DaysIn4Years   = daysBefore 5
-
-  public export
-  daysNZ : (leap : Bool) -> NonZero (Year.Days leap)
-  daysNZ False = SIsNonZero
-  daysNZ True = SIsNonZero
 
 
 ||| Symbolic month names
@@ -193,37 +196,43 @@ namespace Month
   daysBefore False m = modFin (daysBeforeRec False m) (Year.Days False)
 
   ||| Prove that our invariant holds when we make the inductive call.
+  |||
+  ||| This seems fairly obvious, but I'm not sure how to prove it
   0 lemma1
-    :  {n, r, x, b : Nat}
+    :  {0 n, r, x, b : Nat}
+    -> (0 ltenx : LTE x n)
     -> (0 prf : n + r = b)
     -> ((n `minus` x) + (r + x) = b)
   lemma1 prf = ?lemma_rhs
 
-  ||| Convert finInvSpec to the form we need to show.
+  ||| Converts finInvSpec to the form we need.
+  |||
+  ||| This seems even easier to prove than above, but still not sure
+  ||| how.
   0 lemma2
-    :  {n, r, b : Nat}
-    -> (0 prf : (S n) + r = b)
-    -> (n + (S r) = b)
+    :  {0 n, r, b : Nat}
+    -> (0 prf : (S n) + r     = b)
+    -> (        n     + (S r) = b)
+  lemma2 prf = ?lemma2_rhs
 
   ||| Recursively search for the given month, leaving the
   ||| remainder as the 0-indexed day of the month.
   public export
   findMonthAndDay
-    : (leap : Bool)
+    :  (leap : Bool)
     -> (n, r : Nat)
     -> (0 prf : n + r = Year.Days leap)
     -> (m : Month)
     -> DPair Month (Day leap)
   findMonthAndDay leap n r prf m =
-    let days := Days leap m
-    in case isLT n (Days leap m) of
+    case isLT n (Days leap m) of
       Yes dltdm  => (m ** natToFinLTE n dltdm)
       No  contra =>
         findMonthAndDay
           leap
-          (assert_smaller n (n `minus` days))
-          (r + days)
-          (lemma1 prf)
+          (assert_smaller n (n `minus` (Days leap m)))
+          (r + (Days leap m))
+          (lemma1 (fromLteSucc $ notLTEImpliesGT contra) prf)
           (nextMonth m)
 
   ||| Find the month and day for the given day of year.
@@ -270,11 +279,6 @@ record Date where
 
 
 namespace Date
-
-  Show Date where
-    show (MkDate y m d) =
-      show y ++ "-" ++ show m ++ "-" ++ show (FS d)
-
   ||| Construct a date from unrefined components.
   |||
   ||| This may fail if the month or day fall outside expected intervals.
@@ -370,8 +374,14 @@ namespace Date
   fromUnixTime s =
     fromOrdinal (epochStart + (divNatNZ s 86400 SIsNonZero))
 
-  public export Eq Date       where x == y      = (unpack x) == (unpack y)
-  public export Ord Date      where compare x y = compare (unpack x) (unpack y)
+  ||| Convert date to an iso string
+  toString : Date -> String
+  toString d = let (y, m, d) := unpack d in "\{show y}-\{show m}-\{show d}"
+
+  {- Implement common interfaces -}
+  public export Show     Date where show        = toString
+  public export Eq       Date where x == y      = (unpack x) == (unpack y)
+  public export Ord      Date where compare x y = compare (unpack x) (unpack y)
   public export ToJSON   Date where toJSON d    = string $ show d
   public export FromJSON Date where fromJSON    = withString "Date" parseDate
 
@@ -384,8 +394,11 @@ today = do
   pure $ fromUnixTime $ cast $ seconds ct
 
 
-{- Implement common interfaces -}
-
+||| A short interactive test of the library
+|||
+||| On my machine `$ pack run datetime.ipkg` will output the current
+||| date every 10 - 20 seconds, give or take, and the fan starts
+||| spinning fast.
 partial
 main : IO ()
 main = do
