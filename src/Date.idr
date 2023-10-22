@@ -1,65 +1,95 @@
-||| Concrete date/time and related types.
-
-
 {-
- Inspired from Python's Lib/datetime.py.
- 
- Gregorian calendar indefinitely extended into the future. Unlike the
- python from which this is derived library, this module uses natural
- numbers to represent dates: Dates before Jan 1, 1 C.E are
- unrepresentable 
- 
- In addition, this library makes an effort to prevent representation
- of invalid julian dates, such as:
- 
- 2023 Mar 32
- 2023 Feb 29
- 1000 Jan 0
- 2024 Nov 31
- 
- I.e. the day of month *must* be between 1 and the number of days in
- that month, for that year.
+ - A Meal Planner in Idris
+ - Copyright (C) 2022 Brandon Lewis
+ -
+ - This program is free software: you can redistribute it and/or modify
+ - it under the terms of the GNU Affero General Public License as
+ - published by the Free Software Foundation, either version 3 of the
+ - License, or (at your option) any later version.
+ -
+ - This program is distributed in the hope that it will be useful,
+ - but WITHOUT ANY WARRANTY; without even the implied warranty of
+ - MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ - GNU Affero General Public License for more details.
+ -
+ - You should have received a copy of the GNU Affero General Public License
+ - along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
+
+
+||| This is a cut-down version of a date-time library I started earlier.
+|||
+||| The approach is taken from a discord conversation I had a few
+||| months back.
+|||
+||| I'm doing more run-time checking here than I would like to do in
+||| my stand-alone date-time library, in the interest of moving things
+||| along.
+
+
+||| Special thanks to Stephen Hoek and Kiana
+
 
 module Date
 
+
 import Data.Nat
-import Decidable.Equality
+import Data.Nat.Order.Properties
+import Data.Fin
+import Data.Fin.Extra
+import Derive.Prelude
+import JSON.Derive
+import Language.Reflection.Util
+import System.Clock
+
 
 %default total
+%language ElabReflection
 
-||| Safe integer division with statically nonzero divisor
-staticDiv 
-  :  Nat 
-  -> (divisor : Nat) 
-  -> {auto prf : NonZero divisor} 
-  -> Nat
-staticDiv a b {prf} = divNatNZ a b prf
 
-||| Safe integer modulo with statically nonzero divisor
-staticMod 
-  :  Nat 
-  -> (divisor : Nat) 
-  -> {auto prf : NonZero divisor} 
-  -> Nat
-staticMod a b {prf} = modNatNZ a b prf
+||| A Year is just a natural number.
+namespace Year
 
-||| Safe integer divmod with statically nonzero divisor
-staticDivmod 
-  :  Nat 
-  -> (divisor : Nat) 
-  -> {auto prf : NonZero divisor} 
-  -> (Nat, Nat)
-staticDivmod a b {prf} = divmodNatNZ a b prf
+  ||| Returns true if the given year is a leap year.
+  public export
+  IsLeapYear : (n: Nat) -> Bool
+  IsLeapYear year =
+    let
+      mod4   := (modNatNZ year 4   SIsNonZero) == 0
+      mod100 := (modNatNZ year 100 SIsNonZero) == 0
+      mod400 := (modNatNZ year 400 SIsNonZero) == 0
+    in
+      mod4 && ((not mod100) || mod400)
 
-||| Return a non-zero constant together with a proof that it's not zero
-constNZ
-  :  (n : Nat)
-  -> {auto prf : NonZero n}
-  -> DPair Nat NonZero
-constNZ n = MkDPair n prf
+  ||| Return the number of days in the given year
+  public export
+  Days : Bool -> Nat
+  Days True = 366
+  Days False = 365
 
-||| Abbreviated symbolic month
+  ||| A natural number bounded to the number of days in a given year
+  public export
+  0 Day : Bool -> Type
+  Day leap = Fin (Days leap)
+
+  ||| Number of days before Janary 1st of year.
+  public export
+  daysBefore : (y : Nat) -> Nat
+  daysBefore Z     = 0
+  daysBefore (S y) =
+    let
+      yOver4    := divNatNZ y 4   SIsNonZero
+      yOver100  := divNatNZ y 100 SIsNonZero
+      yOver400  := divNatNZ y 400 SIsNonZero
+    in (y * 365 + yOver4) `minus` yOver100 + yOver400
+
+  {- Some useful constants -}
+  public export DaysIn400Years : Nat ; DaysIn400Years = daysBefore 401
+  public export DaysIn100Years : Nat ; DaysIn100Years = daysBefore 101
+  public export DaysIn4Years   : Nat ; DaysIn4Years   = daysBefore 5
+
+
+||| A month is an 8-bit unsigned integer between 1 and 12, inclusive.
 public export
 data Month
   = Jan
@@ -75,236 +105,270 @@ data Month
   | Nov
   | Dec
 
-||| Return the previous month for the given month
-prevMonth : Month -> Month
-prevMonth Jan = Dec
-prevMonth Feb = Jan
-prevMonth Mar = Feb
-prevMonth Apr = Mar
-prevMonth May = Apr
-prevMonth Jun = May
-prevMonth Jul = Jun
-prevMonth Aug = Jul
-prevMonth Sep = Aug
-prevMonth Oct = Sep
-prevMonth Nov = Oct
-prevMonth Dec = Nov
+namespace Month
+  %runElab derive "Month" [Show, Eq, Ord]
 
-||| Return the next month for the given month
-nextMonth : Month -> Month
-nextMonth Jan = Feb
-nextMonth Feb = Mar
-nextMonth Mar = Apr
-nextMonth Apr = May
-nextMonth May = Jun
-nextMonth Jun = Jul
-nextMonth Jul = Aug
-nextMonth Aug = Sep
-nextMonth Sep = Oct
-nextMonth Oct = Nov
-nextMonth Nov = Dec
-nextMonth Dec = Jan
+  ||| Convert a Month to a natural number < 12
+  monthToFin : Month -> Fin 12
+  monthToFin Jan = 0
+  monthToFin Feb = 1
+  monthToFin Mar = 2
+  monthToFin Apr = 3
+  monthToFin May = 4
+  monthToFin Jun = 5
+  monthToFin Jul = 6
+  monthToFin Aug = 7
+  monthToFin Sep = 8
+  monthToFin Oct = 9
+  monthToFin Nov = 10
+  monthToFin Dec = 11
+
+  ||| Convert a natural number < 12 to a Month.
+  finToMonth : Fin 12 -> Month
+  finToMonth 0 = Jan
+  finToMonth 1 = Feb
+  finToMonth 2 = Mar
+  finToMonth 3 = Apr
+  finToMonth 4 = May
+  finToMonth 5 = Jun
+  finToMonth 6 = Jul
+  finToMonth 7 = Aug
+  finToMonth 8 = Sep
+  finToMonth 9 = Oct
+  finToMonth 10 = Nov
+  finToMonth 11 = Dec
+
+  {- support some useful casts -}
+  public export Cast Month    (Fin 12) where cast = monthToFin
+  public export Cast (Fin 12) Month    where cast = finToMonth
+  public export Cast Month    Nat      where cast = finToNat . monthToFin
+
+  ||| The previous month, wrapping around to December
+  public export
+  prevMonth : Month -> Month
+  prevMonth m = finToMonth $ (monthToFin m) - 1
+
+  ||| The next month, wrapping around to Jan
+  public export
+  nextMonth : Month -> Month
+  nextMonth m = finToMonth $ finS $ monthToFin m
+
+  ||| The number of days of the given month and leap status.
+  %inline public export
+  Days : Bool -> Month -> Nat
+  Days True  Jan = 31
+  Days True  Feb = 29
+  Days True  Mar = 31
+  Days True  Apr = 30
+  Days True  May = 31
+  Days True  Jun = 30
+  Days True  Jul = 31
+  Days True  Aug = 31
+  Days True  Sep = 30
+  Days True  Oct = 31
+  Days True  Nov = 30
+  Days True  Dec = 31
+  Days False Jan = 31
+  Days False Feb = 28
+  Days False Mar = 31
+  Days False Apr = 30
+  Days False May = 31
+  Days False Jun = 30
+  Days False Jul = 31
+  Days False Aug = 31
+  Days False Sep = 30
+  Days False Oct = 31
+  Days False Nov = 30
+  Days False Dec = 31
+
+  {-
+  Days True  Feb = 29
+  Days False Feb = 28
+  Days _     Apr = 30
+  Days _     Jun = 30
+  Days _     Sep = 30
+  Days _     Nov = 30
+  Days _     _   = 31
+  -}
+
+  ||| A valid day of a given month and leap status
+  public export
+  0 Day : Bool -> Month -> Type
+  Day leap month = Fin (Days leap month)
+
+  public export
+  daysBeforeRec : (leap : Bool) -> (m : Month) -> Nat
+  daysBeforeRec leap Jan = Z
+  daysBeforeRec leap m =
+    let pm = prevMonth m
+    in Days leap pm + daysBeforeRec leap (assert_smaller m pm)
+
+  ||| The number of days in the year before the first of the given month
+  public export
+  daysBefore : (leap : Bool) -> Month -> Year.Day leap
+  daysBefore True  m = modFin (daysBeforeRec True m) (Year.Days True)
+  daysBefore False m = modFin (daysBeforeRec False m) (Year.Days False)
+
+  ||| Doing the opposite thing to both sides of a sum doesn't change
+  ||| the total
+  lemma1
+    :  {n, r, x, b : Nat}
+    -> (0 prf : n + r = b)
+    -> ((n `minus` x) + (r + x) = b)
+  lemma1 prf = ?lemma_rhs
+
+  ||| This is also true if we just use S
+  lemma2
+    :  {n, r, b : Nat}
+    -> (0 prf : (S n) + r = b)
+    -> (n + (S r) = b)
+
+  ||| Recursively search for the given month, leaving the
+  ||| remainder as the 0-indexed day of the month
+  public export
+  findMonthAndDay
+    : (leap : Bool)
+    -> (n, r : Nat)
+    -> (0 prf : n + r = Year.Days leap)
+    -> (m : Month)
+    -> DPair Month (Day leap)
+  findMonthAndDay leap n r prf m =
+    let days := Days leap m
+    in case isLT n (Days leap m) of
+      Yes dltdm  => (m ** natToFinLTE n dltdm)
+      No  contra =>
+        findMonthAndDay
+          leap
+          (assert_smaller n (n `minus` days))
+          (r + days)
+          (lemma1 prf)
+          (nextMonth m)
+
+  ||| Find the month and day for the given day of year.
+  public export
+  findDayOf
+    : (leap : Bool)
+    -> Year.Day leap
+    -> DPair Month (Day leap)
+  findDayOf leap doy = findMonthAndDay
+    leap
+    (finToNat doy)
+    (S (finToNat (invFin doy)))
+    (lemma2 (invFinSpec doy))
+    Jan
 
 
-||| Year -> True if leap year, else False
-isLeap : (n : Nat) -> Bool
-isLeap year = 
-  let
-    nthYear : (n : Nat) -> {auto prf : NonZero n} -> Bool
-    nthYear n {prf} = (staticMod year n) == 0
-  in 
-    (nthYear 4) && (not (nthYear 100) || (nthYear 400))
-
-||| Number of days in the given month and year
-daysInMonth : Nat -> Month -> Nat
-daysInMonth year Jan = 31
-daysInMonth year Feb = if isLeap year then 29 else 28
-daysInMonth year Mar = 31
-daysInMonth year Apr = 30
-daysInMonth year May = 31
-daysInMonth year Jun = 30
-daysInMonth year Jul = 31
-daysInMonth year Aug = 31
-daysInMonth year Sep = 30
-daysInMonth year Oct = 31
-daysInMonth year Nov = 30
-daysInMonth year Dec = 31
-
-||| Number of days before January 1st of the given year.
-daysBeforeYear : (y : Nat) -> {auto _ : NonZero y} -> Nat
-daysBeforeYear year =
-  let y = pred year
-  in y * 365 + (staticDiv y 4) + (staticDiv y 400)
-
-||| Number of days in year preceding first day of month.
-daysBeforeMonth : Nat -> Month -> Nat
-daysBeforeMonth year Jan   = 0
-daysBeforeMonth year month = case prevMonth month of
-      Jan => 0
-      prevMonth => 
-        let
-          dim = daysInMonth year month
-          dbm = daysBeforeMonth year (assert_smaller month prevMonth)
-        in
-          dim + dbm
-
-||| Number of days inthe given year
-daysInYear : (y : Nat) -> Nat
-daysInYear y = if isLeap y then 366 else 365
-
-
-||| A validated YMD triple
+||| A valid Gregorian Date, which correctly handles leap years.
 |||
-||| e.g. 2023-Jan-0, 2023-Feb-29, 2012-Aug-35 are not allowed
+||| Month and days are represented as 0-based finite integers.
 export
-data Date : Type where
-  Valid
-    :  (year   : Nat)
-    -> (month  : Month)
-    -> (day    : Nat)
-    -> {0    _ : NonZero year}
-    -> {0    _ : NonZero day}
-    -> {0    _ : LTE day (daysInMonth year month)}
-    -> Date
+record Date where
+  constructor MkDate
+  year:  Nat
+  month: Month
+  day:   Month.Day (IsLeapYear year) month
 
-||| Number of days in 400 years
-DI400Y : Nat
-DI400Y = daysBeforeYear 401
 
-||| Number of days in 100 years
-DI100Y : Nat
-DI100Y = daysBeforeYear 101
+namespace Date
 
-||| Number of days in 4 years
-DI4Y : Nat
-DI4Y = daysBeforeYear 5
+  Show Date where
+    show (MkDate y m d) =
+      show y ++ "-" ++ show m ++ "-" ++ show (FS d)
 
-{- works but is slow
-DI4Y_is_correct : DI4Y = (4 * 365 + 1)
-DI4Y_is_correct = Refl
-DI100Y_is_correct : DI100Y  = 25 * DI4Y - 1
-DI100Y_is_correct = Refl
-DIY_400Y_is_correct : DI400Y = (4 * DI100Y + 1)
-DIY_400Y_is_correct = Refl
--}
+  ||| Construct a date from unrefined components.
+  |||
+  ||| This may fail if the month or day fall outside expected intervals.
+  |||
+  ||| Note that, internally, days are represented as 0-based finite
+  ||| integers.
+  public export
+  pack : Nat -> Nat -> Nat -> Maybe Date
+  pack _ Z _ = Nothing
+  pack _ _ Z = Nothing
+  pack y (S m) (S d) = do
+    m <- natToFin m 12
+    d <- natToFin d (Month.Days (IsLeapYear y) (cast m))
+    Just $ MkDate y (cast m) (cast d)
 
-||| Recursively find month and day for given year and day of year
-findMonthAndDay 
-  :  (year       : Nat) 
-  -> (residual   : Nat)
-  -> {0 nzY      : NonZero year}
-  -> {0 nzR      : NonZero residual}
-  -> {0 resLtDiy : LTE residual (daysInYear year)}
-  -> Date
-findMonthAndDay year residual = 
-  let diy = daysInYear year
-  in  fmdRec year residual Jan {nzY} {nzR}
-where 
-  fmdRec 
-    :  (year       : Nat) 
-    -> (residual   : Nat) 
-    -> (month      : Month) 
-    -> {0 nzY      : NonZero year}
-    -> {0 nzR      : NonZero residual}
-    -> {0 resLtDiy : LTE residual (daysInYear year)}
-    -> Date
-  fmdRec year residual month = 
+  ||| Unpack the date into its unrefined components.
+  public export
+  unpack : Date -> (Nat, Nat, Nat)
+  unpack (MkDate y m d) = (y, S (cast m), S (cast d))
+
+  ||| Parse an iso date string into a Date
+  public export
+  parseDate : Parser String Date
+  parseDate s = case forget $ split ('-' ==) s of
+    [y, m, d] =>
+      let
+        y = stringToNatOrZ y
+        m = stringToNatOrZ m
+        d = stringToNatOrZ d
+      in case pack y m d of
+        Nothing => fail "Invalid date"
+        Just d  => Right d
+    _ => fail "Invalid date"
+
+  ||| Convert a date into an ordinal number
+  public export
+  toOrdinal : Date -> Nat
+  toOrdinal (MkDate y m d) =
     let
-      dim = (daysInMonth year month)
-      nm  = (nextMonth month)
-    in case isLTE residual dim of
-       Yes pro    => Valid year month residual
-       No  contra => fmdRec 
-         year 
-         (assert_smaller residual (residual `minus` dim))
-         (nextMonth month)
-  
-{-
-||| Gregorian ordinal to (y, m, d) typle, Considering 1-Jan-1 as day 1
-ord2ymd 
-  :  (ordinal : Nat) 
-  -> {auto prf : NonZero ordinal}
-  -> Julian
-ord2ymd ordinal =
-  let
-    n         := pred ordinal
-    (n400, n) := n `staticDivmod` DI400Y
-    (n100, n) := n `staticDivmod` DI100Y
-    (n4,   n) := n `staticDivmod` DI4Y
-    (n1,   n) := n `staticDivmod` 365
-    year      := (n400 * 400 + 1) + (n100 * 100) + (n4 * 4) + n1
-  in if (n1 == 4) || (n100 == 4)
-  then YMD (?hole (pred year)) Dec 31
-  else 
-    let (month, day) = findMonthAndDay year n Dec
-    in YMD (?hole2 year) month (?hole3 (S day))
+      leap := IsLeapYear y
+      dim  := Month.Days leap m
+      dby  := daysBefore y
+      dbm  := daysBefore leap m
+    in dby + cast dbm + cast d
 
 {-
+  dec31st : Nat -> Date
 
-||| Concrete date type
-export 
-data Date : Type where
-  -- choosing to represent this internally
-  MkDate
-    :  (ord     : Nat) 
-    -> {auto _  : NonZero ord}
-    -> Date
-    
-public export
-fromOrdinal
-  :  (ord : Nat)
-  -> {auto _ : NonZero ord}
-  -> Date
-fromOrdinal ord = MkDate ord
+  ||| Construct a date from a non-zero ordinal number
+  fromOrdinal : (o : Nat) -> {auto onz : NonZero o} -> Date
+  fromOrdinal (S n) =
+    let
+      (n400, n) := divmodNatNZ n DaysIn400Years SIsNonZero
+      (n100, n) := divmodNatNZ n DaysIn100Years SIsNonZero
+      (n4,   n) := divmodNatNZ n DaysIn4Years   SIsNonZero
+      (n1,   n) := divmodNatNZ n 365            SIsNonZero
+      year      := (n400 * 400 + 1) + (n100 * 100) + n4 * 4 + n1
+    in
+      if (n1 == 4) || (n100) == 4
+      then
+        let
+          year := pred year
+          leap := IsLeapYear year
+        in dec31st year
+      else case IsLeapYear year of
+        True  => let (m ** d) := findDayOf True (modFin n (Year.Days True))
+                 in MkDate year m d
+        False => let (m ** d) := findDayOf False (modFin n (Year.Days False))
+                 in MkDate year m d
 
-||| Proleptic Gregorian ordinal for the year, month and day.
-|||
-||| January 1 of year 1 is day 1.
-public export
-fromYMD 
-  :  (year   : Nat)
-  -> (month  : Month)
-  -> (day    : Nat)
-  -> {auto _ : NonZero year}
-  -> {auto _ : NonZero day}
-  -> {auto _ : LTE day (daysInMonth year month)}
-  -> Maybe Date
-fromYMD year month day =
-  let
-    dby = daysBeforeYear year
-    dbm = daysBeforeMonth year month
-    ord = dby + dbm + day
-  in case ord of
-    Z   => Nothing
-    S n => Just (MkDate (S n))
 
 {-
-||| Proleptic Gregorian ordinal for the year, month and day.
-|||
-||| January 1 of year 1 is day 1.
-public export
-toOrdinal : Date -> Nat
-toOrdinal (MkDate ord) = ord
 
-||| Project the year, month, and day from a Date.
-public export
-toYMD : Date -> (Nat, Month, Nat)
-toYMD (MkDate date) = ord2ymd date
-
-||| Project the year from a Date.
-public export
-year : Date -> Nat
-year date = fst (toYMD date)
-
-||| Project the month from a Date
-public export
-month : Date -> Month
-month date = let (_, m, _ ) := (toYMD date) in m
-
-||| Project the day from a Date
-public export
-day : Date -> Month
-day date = let (_, _, d) := (toYMD date) in d
+||| Get the current system time as a Date
+||| XXX: just returns dummy value for now
+export
+today : IO Date
+today = do
+  ct <- clockTime UTC
+  let s = seconds ct
+  putStrLn $ show s
+  pure $ MkDate 2023 8 25
 
 
--}
+{- Implement common interfaces -}
+
+
+export
+Show Date where
+  show d =
+    let (y, m, d) = unpack d
+    in "\{show y}-\{show m}-\{show d}"
+
+export Eq Date       where x == y      = (unpack x) == (unpack y)
+export Ord Date      where compare x y = compare (unpack x) (unpack y)
+export ToJSON   Date where toJSON d    = string $ show d
+export FromJSON Date where fromJSON    = withString "Date" parseDate
