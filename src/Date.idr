@@ -36,11 +36,13 @@ module Date
 
 
 import Data.Nat
+import Data.Nat.Equational
 import Data.Fin
 import Data.Fin.Extra
 import Derive.Prelude
 import JSON.Derive
 import Language.Reflection.Util
+import Syntax.PreorderReasoning
 import System.Clock
 
 
@@ -195,28 +197,26 @@ namespace Month
   daysBefore True  m = modFin (daysBeforeRec True m) (Year.Days True)
   daysBefore False m = modFin (daysBeforeRec False m) (Year.Days False)
 
-  ||| Prove that our invariant holds when we make the inductive call.
-  |||
-  ||| This seems fairly obvious, but I'm not sure how to prove it.
-  |||
-  ||| `n` some natural number `< b`
-  ||| `b` is the upper bound of `n`
-  ||| `x` is some arbitrary value `<= n`
-  ||| `ltenx` is evidence that `x` <= `n`
-  ||| `prf` is evidence that `r` is the complement of `n` modulo `b`
-  |||
-  ||| In simple terms, We need to prove that moving a value from the
-  ||| left column to the right column doesn't change the total.
-  |||
-  ||| The extra bound on `x` is because `minus` on Nat "bottoms out"
-  ||| at zero, rather than wrapping around or going negative. So I
-  ||| think this is needed.
-  0 lemma1
+  ||| prove that it's okay to re-arrange the braces like so
+  minusAssoc
+    : (n,r,x : Nat)
+    -> LTE x n
+    -> (n `minus` x) + r = (n + r) `minus` x
+  minusAssoc n r Z _ = trans (cong (+r) $ minusZeroRight n) (sym $ minusZeroRight (n + r))
+  minusAssoc (S n) r (S x) (LTESucc ok) = minusAssoc n r x ok
+
+  ||| prove that we can 'move' from the value to its complement
+  loopInvariant
     :  {0 n, r, x, b : Nat}
-    -> (0 ltenx : LTE x n)
-    -> (0 prf : n + r = b)
+    -> LTE x n -- these need to be available at runtime
+    -> n + r = b
     -> ((n `minus` x) + (r + x) = b)
-  lemma1 prf = ?lemma_rhs
+  loopInvariant ok eq = Calc $
+    |~ (n `minus` x) + (r + x)
+    ~~ (n `minus` x) + r + x    ...(plusAssociative (n `minus` x) r x)
+    ~~ ((n + r) `minus` x) + x  ...(cong (+x) $ minusAssoc n r x ok)
+    ~~ n + r                    ...(plusMinusLte x (n + r) (transitive ok (lteAddRight n)))
+    ~~ b                        ...(eq)
 
   ||| Recursively search for the given month, leaving the
   ||| remainder as the 0-indexed day of the month.
@@ -244,7 +244,7 @@ namespace Month
           leap
           (assert_smaller n (n `minus` (Days leap m)))
           (r + (Days leap m))
-          (lemma1 (fromLteSucc $ notLTEImpliesGT not_less) prf)
+          (loopInvariant (fromLteSucc $ notLTEImpliesGT not_less) prf)
           (nextMonth m)
 
   ||| Converts a library theorem to the form we need in `findDayOf`.
@@ -256,11 +256,11 @@ namespace Month
   |||    n + (S r) = b`
   |||
   ||| We want the `S` on the complement side, not on the day value.
-  0 lemma2
+  0 succPlusAssoc
     :  {0 n, r, b : Nat}
     -> (0 prf : (S n) + r     = b)
     -> (        n     + (S r) = b)
-  lemma2 prf = rewrite sym (plusSuccRightSucc n r) in prf
+  succPlusAssoc prf = rewrite sym (plusSuccRightSucc n r) in prf
 
   ||| Find the month and day for the given day of year.
   |||
@@ -279,7 +279,7 @@ namespace Month
     --- for `findMonthAndDay`.
     (finToNat doy)
     (S (finToNat (invFin doy)))
-    (lemma2 (invFinSpec doy))
+    (succPlusAssoc (invFinSpec doy))
     Jan
 
   ||| Make a (Month ** Day) pair from a static 1-based day.
