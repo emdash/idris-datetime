@@ -361,19 +361,24 @@ namespace Date
   unpack : Date -> (Nat, Nat, Nat)
   unpack (MkDate y m d) = (y, S (cast m), S (cast d))
 
-  ||| Parse an iso date string into a Date
+  ||| Parse an iso date string to a date
   public export
-  parseDate : Parser String Date
-  parseDate s = case forget $ split ('-' ==) s of
+  fromString : String -> Maybe Date
+  fromString s = case forget $ split ('-' ==) s of
     [y, m, d] =>
       let
         y = stringToNatOrZ y
         m = stringToNatOrZ m
         d = stringToNatOrZ d
-      in case pack y m d of
-        Nothing => fail "Invalid date"
-        Just d  => Right d
-    _ => fail "Invalid date"
+      in pack y m d
+    _ => Nothing
+
+  ||| Parse an iso date string from JSON.
+  public export
+  parseDate : Parser String Date
+  parseDate s = case fromString s of
+    Nothing => fail "Invalid Date"
+    Just d  => Right d
 
   ||| Convert a date into an ordinal number
   public export
@@ -438,6 +443,7 @@ namespace Date
     fromOrdinal (epochStart + (divNatNZ s 86400 SIsNonZero))
 
   ||| Convert date to an iso string
+  public export
   toString : Date -> String
   toString d = let (y, m, d) := unpack d in "\{show y}-\{show m}-\{show d}"
 
