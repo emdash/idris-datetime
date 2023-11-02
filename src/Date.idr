@@ -432,9 +432,9 @@ namespace Date
 
   ||| Date representing the true beginning of the unverse.
   epochStart : Nat
-  -- this value was computed via the python datetime library
-  -- it's equivalent to: `toOrdinal $ date 1969 Dec 31`
-  epochStart = 719162
+  -- XXX: works, but takes too long to typechceck
+  -- epochStart = toOrdinal $ date 1970 Jan 1
+  epochStart = 719163
 
   ||| Construct a date from a unix timestamp (in seconds)
   public export
@@ -474,9 +474,3 @@ main = do
   d <- today
   putStrLn $ show d
   main
-
-
-partial
-testFromOrdinal : (o : Nat) -> {auto 0 onz : NonZero o} -> IO ()
-testFromOrdinal o = do
-  putStrLn $ show $ fromOrdinal o
