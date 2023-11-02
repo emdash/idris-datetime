@@ -49,6 +49,22 @@ import System.Clock
 %default total
 %language ElabReflection
 
+{- Transforms required for acceptable performance ************************** -}
+
+%transform "divNatNZ" divNatNZ x y _ =
+  integerToNat $ div (natToInteger x) (natToInteger y)
+%transform "modNatNZ" modNatNZ x y _ =
+  integerToNat $ mod (natToInteger x) (natToInteger y)
+%transform "divmodNatNZ" divmodNatNZ x y _ =
+  let
+    x = natToInteger x
+    y = natToInteger y
+    d = integerToNat (div x y)
+    m = integerToNat (mod x y)
+  in (d, m)
+
+
+{- Implementation ********************************************************** -}
 
 ||| A Year is just a Nat, so there's no special type alias.
 |||
