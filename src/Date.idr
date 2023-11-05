@@ -21,9 +21,10 @@
 ||| This is modeled after Python's datetime module, except key
 ||| operations are total.
 |||
-||| I'm using intrinsic typing via Nat and Fin to prove date
-||| bounds. This is as slow as I was warned it would be. But I'll post
-||| this version of the library, in case anyone wants to explore it.
+||| I represent ordinals as Natural numbers, because Data.Nat defines
+||| so many theorems and lemmas which are not defined for
+||| `Integer`. If there's a way to re-formulate this code for integers
+||| without sacrificing totality, let me know.
 |||
 ||| The approach is taken from a discord conversation I had a few
 ||| months back.
@@ -37,6 +38,7 @@ module Date
 
 import Data.Nat
 import Data.Nat.Equational
+import Data.Nat.Order.Properties
 import Data.Fin
 import Data.Fin.Extra
 import Derive.Prelude
@@ -62,6 +64,25 @@ import System.Clock
     d = integerToNat (div x y)
     m = integerToNat (mod x y)
   in (d, m)
+
+
+||| Convert a `NonZero n` to an `LTE 1 n`
+0 nonZeroToLTE : NonZero n -> LTE 1 n
+nonZeroToLTE (SIsNonZero) = LTESucc LTEZero
+
+
+||| Convert an `LTE 1 n` to a `NonZero n`
+0 LTEToNonZero : LTE 1 n -> NonZero n
+LTEToNonZero (LTESucc x) = SIsNonZero
+
+||| Adding a nat to a `NonZero n` preserves nonzero status
+0 nonZeroPlus : (m : Nat) -> NonZero n -> NonZero (n + m)
+nonZeroPlus 0 SIsNonZero = SIsNonZero
+nonZeroPlus (S k) SIsNonZero = SIsNonZero
+
+||| Subtracting a bounded number also preserves nonzero status
+0 nonZeroMinusLT : NonZero n -> LT m n -> NonZero (n `minus` m)
+-- obviously true but super annoying to prove in idris
 
 
 {- Implementation ********************************************************** -}
@@ -453,6 +474,47 @@ namespace Date
   public export Ord      Date where compare x y = compare (unpack x) (unpack y)
   public export ToJSON   Date where toJSON d    = string $ show d
   public export FromJSON Date where fromJSON    = withString "Date" parseDate
+
+  ||| Proof that the ordinal of a date is always nonzero
+  |||
+  ||| This is true because ordinals are Nats, and 1-Jan-1 is ordinal
+  ||| 1. The implementation explicitly adds one to the day field, so
+  ||| the value can never be less than one. This wouldn't be true for
+  ||| proleptic ordinals, which are integers. On the other hand if
+  ||| ordinals were integers, we wouldn't need this proof.
+  0 toOrdinalNZ : (d : Date) -> NonZero (toOrdinal d)
+  -- also true, but again not sure how to prove this
+
+  ||| Proof that adding a nat to an ordinal will be always be nonzero
+  0 toOrdinalPlusNNZ
+    :  {auto 0 d : Date}
+    -> {auto 0 n : Nat}
+    -> NonZero ((toOrdinal d) + n)
+  toOrdinalPlusNNZ {d} = nonZeroPlus n (toOrdinalNZ d)
+
+  ||| Proof that subtracting `n` from a date is nonzero if `n` is less
+  ||| than the date's ordinal representation.
+  0 toOrdinalMinusNNZ
+    :  {auto 0 d      : Date}
+    -> {auto 0 n      : Nat}
+    -> {auto 0 nvalid : LT n (toOrdinal d)}
+    -> NonZero ((toOrdinal d) `minus` n)
+  toOrdinalMinusNNZ {d} = nonZeroMinusLT (toOrdinalNZ d) nvalid
+
+  ||| The date that is `n` days after the given date
+  public export
+  daysAfter : Nat -> Date -> Date
+  daysAfter n d = fromOrdinal ((toOrdinal d) + n) {onz = toOrdinalPlusNNZ}
+
+  ||| The date that is `n` days before the given date, stopping at `1 Jan 1`
+  daysBefore : Nat -> Date -> Date
+  daysBefore n d = case isLT n (toOrdinal d) of
+    Yes prf => fromOrdinal ((toOrdinal d) `minus` n) {onz = toOrdinalMinusNNZ}
+    No  _   => MkDate 1 Jan 1
+
+  ||| Subtracting two dates yields a natural (in days)
+  (-) : (a : Date) -> (b : Date) -> Nat
+  (-) x y = (toOrdinal x) `minus` (toOrdinal y)
 
 
 ||| Get the current system time as a Date
