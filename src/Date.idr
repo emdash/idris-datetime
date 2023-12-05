@@ -437,8 +437,6 @@ namespace Date
         in MkDate year m d
 
   ||| Create a date from static data.
-  |||
-  ||| This correctly handles 0-indexed day field.
   public export
   date
     :  (y : Nat)
@@ -526,10 +524,6 @@ today = do
 
 
 ||| A short interactive test of the library
-|||
-||| On my machine `$ pack run datetime.ipkg` will output the current
-||| date every 10 - 20 seconds, give or take, and the fan starts
-||| spinning fast.
 partial
 main : IO ()
 main = do
