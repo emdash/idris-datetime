@@ -286,7 +286,7 @@ namespace Month
 
   ||| Converts a library theorem to the form we need in `findDayOf`.
   |||
-  ||| invFinSpec is almost the theorem we need, but gives:
+  ||| complementSpec is almost the theorem we need, but gives:
   |||   (S n) + r = b
   |||
   ||| we need:
@@ -311,12 +311,12 @@ namespace Month
     -> DPair Month (Day leap)
   findDayOf leap doy = findMonthAndDay
     leap
-    --- invFinSpec helps decompose a `Fin n` into a value and its
+    --- complementSpec helps decompose a `Fin n` into a value and its
     --- complement `mod n`, along with a proof of the loop invariant
     --- for `findMonthAndDay`.
     (finToNat doy)
-    (S (finToNat (invFin doy)))
-    (succPlusAssoc (invFinSpec doy))
+    (S (finToNat (complement doy)))
+    (succPlusAssoc (complementSpec doy))
     Jan
 
   ||| Make a (Month ** Day) pair from a static 1-based day.
