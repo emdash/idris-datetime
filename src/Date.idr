@@ -82,7 +82,7 @@ nonZeroPlus (S k) SIsNonZero = SIsNonZero
 
 ||| Subtracting a bounded number also preserves nonzero status
 0 nonZeroMinusLT : NonZero n -> LT m n -> NonZero (n `minus` m)
--- obviously true but super annoying to prove in idris
+-- obviously true but I am not sure how to prove it.
 
 
 {- Implementation ********************************************************** -}
