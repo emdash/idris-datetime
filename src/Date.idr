@@ -1,3 +1,4 @@
+
 {-
  - idris-datetime
  -
@@ -80,9 +81,18 @@ LTEToNonZero (LTESucc x) = SIsNonZero
 nonZeroPlus 0 SIsNonZero = SIsNonZero
 nonZeroPlus (S k) SIsNonZero = SIsNonZero
 
+ltzToNonZ : Lt 0 a -> NonZero a
+ltzToNonZ (LTESucc x) = ItIsSucc
+
 ||| Subtracting a bounded number also preserves nonzero status
+|||
+||| Proof suplied by FFFluoride from Discord.
 0 nonZeroMinusLT : NonZero n -> LT m n -> NonZero (n `minus` m)
--- obviously true but I am not sure how to prove it.
+nonZeroMinusLT x y = nzLTrewrite m n y
+where
+  nzLTrewrite : (m, n : Nat) -> LT m n -> NonZero (n `minus m)
+  nzLTrewrite m n x = ltzToNonZ (minusPos x)
+
 
 
 {- Implementation ********************************************************** -}
