@@ -1,4 +1,3 @@
-
 {-
  - idris-datetime
  -
@@ -67,33 +66,30 @@ import System.Clock
   in (d, m)
 
 
-||| Convert a `NonZero n` to an `LTE 1 n`
-0 nonZeroToLTE : NonZero n -> LTE 1 n
-nonZeroToLTE (SIsNonZero) = LTESucc LTEZero
+||| Convert a `IsSucc n` to an `LTE 1 n`
+0 nonZeroToLTE : IsSucc n -> LTE 1 n
+nonZeroToLTE (ItIsSucc) = LTESucc LTEZero
 
+||| Convert an `LTE 1 n` to a `IsSucc n`
+0 LTEToIsSucc : LTE 1 n -> IsSucc n
+LTEToIsSucc (LTESucc x) = ItIsSucc
 
-||| Convert an `LTE 1 n` to a `NonZero n`
-0 LTEToNonZero : LTE 1 n -> NonZero n
-LTEToNonZero (LTESucc x) = SIsNonZero
+||| Adding a nat to a `IsSucc n` preserves nonzero status
+0 isSuccPlus : (m : Nat) -> IsSucc n -> IsSucc (n + m)
+isSuccPlus 0 ItIsSucc = ItIsSucc
+isSuccPlus (S k) ItIsSucc = ItIsSucc
 
-||| Adding a nat to a `NonZero n` preserves nonzero status
-0 nonZeroPlus : (m : Nat) -> NonZero n -> NonZero (n + m)
-nonZeroPlus 0 SIsNonZero = SIsNonZero
-nonZeroPlus (S k) SIsNonZero = SIsNonZero
-
-ltzToNonZ : Lt 0 a -> NonZero a
-ltzToNonZ (LTESucc x) = ItIsSucc
+ltzToIsSucc : LT 0 a -> IsSucc a
+ltzToIsSucc (LTESucc x) = ItIsSucc
 
 ||| Subtracting a bounded number also preserves nonzero status
 |||
 ||| Proof suplied by FFFluoride from Discord.
-0 nonZeroMinusLT : NonZero n -> LT m n -> NonZero (n `minus` m)
-nonZeroMinusLT x y = nzLTrewrite m n y
+0 isSuccMinusLT : IsSucc n -> LT m n -> IsSucc (n `minus` m)
+isSuccMinusLT x y = lemma m n y
 where
-  nzLTrewrite : (m, n : Nat) -> LT m n -> NonZero (n `minus m)
-  nzLTrewrite m n x = ltzToNonZ (minusPos x)
-
-
+  lemma : (m, n : Nat) -> LT m n -> IsSucc (n `minus` m)
+  lemma m n x = ltzToIsSucc (minusPos x)
 
 {- Implementation ********************************************************** -}
 
@@ -108,9 +104,9 @@ namespace Year
   IsLeapYear : (n: Nat) -> Bool
   IsLeapYear year =
     let
-      mod4   := (modNatNZ year 4   SIsNonZero) == 0
-      mod100 := (modNatNZ year 100 SIsNonZero) == 0
-      mod400 := (modNatNZ year 400 SIsNonZero) == 0
+      mod4   := (modNatNZ year 4   ItIsSucc) == 0
+      mod100 := (modNatNZ year 100 ItIsSucc) == 0
+      mod400 := (modNatNZ year 400 ItIsSucc) == 0
     in
       mod4 && ((not mod100) || mod400)
 
@@ -125,9 +121,9 @@ namespace Year
   ||| This obvious fact isn't transparent to Idris.  It also doesn't
   ||| work if it's given a 0 quantity, so it's not marked as erased.
   public export
-  daysNZ : (leap : Bool) -> NonZero (Year.Days leap)
-  daysNZ False = SIsNonZero
-  daysNZ True  = SIsNonZero
+  daysNZ : (leap : Bool) -> IsSucc (Year.Days leap)
+  daysNZ False = ItIsSucc
+  daysNZ True  = ItIsSucc
 
   ||| A natural number bounded to the number of days in a given year.
   public export
@@ -140,9 +136,9 @@ namespace Year
   daysBefore Z     = 0
   daysBefore (S y) =
     let
-      yOver4    := divNatNZ y 4   SIsNonZero
-      yOver100  := divNatNZ y 100 SIsNonZero
-      yOver400  := divNatNZ y 400 SIsNonZero
+      yOver4    := divNatNZ y 4   ItIsSucc
+      yOver100  := divNatNZ y 100 ItIsSucc
+      yOver400  := divNatNZ y 400 ItIsSucc
     in (y * 365) + yOver4 + yOver400 `minus` yOver100
 
   {- Some useful constants -}
@@ -337,7 +333,7 @@ namespace Month
     : (leap : Bool)
     -> (m : Month)
     -> (d : Nat)
-    -> {auto 0 dnZ : NonZero d}
+    -> {auto 0 dnZ : IsSucc d}
     -> {auto 0 dlt : LTE d (Days leap m)}
     -> DPair Month (Month.Day leap)
   day True  m (S d) = (m ** natToFinLT d)
@@ -424,13 +420,13 @@ namespace Date
 
   ||| Construct a date from a non-zero ordinal number
   public export
-  fromOrdinal : (o : Nat) -> {auto 0 onz : NonZero o} -> Date
+  fromOrdinal : (o : Nat) -> {auto 0 onz : IsSucc o} -> Date
   fromOrdinal (S n) =
     let
-      (n400, n) := divmodNatNZ n DaysIn400Years SIsNonZero
-      (n100, n) := divmodNatNZ n DaysIn100Years SIsNonZero
-      (n4,   n) := divmodNatNZ n DaysIn4Years   SIsNonZero
-      (n1,   n) := divmodNatNZ n 365            SIsNonZero
+      (n400, n) := divmodNatNZ n DaysIn400Years ItIsSucc
+      (n100, n) := divmodNatNZ n DaysIn100Years ItIsSucc
+      (n4,   n) := divmodNatNZ n DaysIn4Years   ItIsSucc
+      (n1,   n) := divmodNatNZ n 365            ItIsSucc
       year      := (n400 * 400 + 1) + (n100 * 100) + n4 * 4 + n1
     in
       if (n1 == 4) || (n100) == 4
@@ -452,7 +448,7 @@ namespace Date
     :  (y : Nat)
     -> (m : Month)
     -> (d : Nat)
-    -> {auto 0 dnz : NonZero d}
+    -> {auto 0 dnz : IsSucc d}
     -> {auto 0 dlt : LTE d (Month.Days (IsLeapYear y) m)}
     -> Date
   date y m d =
@@ -469,7 +465,7 @@ namespace Date
   public export
   fromUnixTime : Nat -> Date
   fromUnixTime s =
-    fromOrdinal (epochStart + (divNatNZ s 86400 SIsNonZero))
+    fromOrdinal (epochStart + (divNatNZ s 86400 ItIsSucc))
 
   ||| Convert date to an iso string
   public export
@@ -490,15 +486,15 @@ namespace Date
   ||| the value can never be less than one. This wouldn't be true for
   ||| proleptic ordinals, which are integers. On the other hand if
   ||| ordinals were integers, we wouldn't need this proof.
-  0 toOrdinalNZ : (d : Date) -> NonZero (toOrdinal d)
+  0 toOrdinalNZ : (d : Date) -> IsSucc (toOrdinal d)
   -- also true, but again not sure how to prove this
 
   ||| Proof that adding a nat to an ordinal will be always be nonzero
   0 toOrdinalPlusNNZ
     :  {auto 0 d : Date}
     -> {auto 0 n : Nat}
-    -> NonZero ((toOrdinal d) + n)
-  toOrdinalPlusNNZ {d} = nonZeroPlus n (toOrdinalNZ d)
+    -> IsSucc ((toOrdinal d) + n)
+  toOrdinalPlusNNZ {d} = isSuccPlus n (toOrdinalNZ d)
 
   ||| Proof that subtracting `n` from a date is nonzero if `n` is less
   ||| than the date's ordinal representation.
@@ -506,8 +502,8 @@ namespace Date
     :  {auto 0 d      : Date}
     -> {auto 0 n      : Nat}
     -> {auto 0 nvalid : LT n (toOrdinal d)}
-    -> NonZero ((toOrdinal d) `minus` n)
-  toOrdinalMinusNNZ {d} = nonZeroMinusLT (toOrdinalNZ d) nvalid
+    -> IsSucc ((toOrdinal d) `minus` n)
+  toOrdinalMinusNNZ {d} = isSuccMinusLT (toOrdinalNZ d) nvalid
 
   ||| The date that is `n` days after the given date
   public export

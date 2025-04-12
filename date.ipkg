@@ -27,6 +27,7 @@ main = Date
 -- name of executable
 executable = date
 -- opts =
+
 sourcedir = "src"
 -- builddir =
 -- outputdir =
